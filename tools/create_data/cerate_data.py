@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import argparse
 import json
+import os
 import os.path as osp
 import random
 import string
@@ -30,7 +31,10 @@ def parse_args():
 
 
 def create_image(path, name, formula, dtype):
-    save_path = osp.join(path, dtype, f'{name}.jpg')
+    dir_path = osp.join(path, dtype)
+    if not osp.exists(dir_path):
+        os.makedirs(dir_path)
+    save_path = osp.join(dir_path, f'{name}.jpg')
     img = np.zeros((224, 224), np.uint8)
     img[:, :] = 255
     cv2.imwrite(save_path, img)
@@ -59,17 +63,41 @@ def create_formula(count, max_num):
     return eval(formula), formula + '='
 
 
+# function to add to JSON
+def write_json(new_data, filename):
+    # create a empty file
+    if not osp.exists(filename):
+        with open(filename, 'w') as pre_file:
+            json.dump({}, pre_file, indent=4)
+
+    with open(filename, 'r+') as file:
+        # First we load existing data into a dict.
+        file_data = json.load(file)
+        assert isinstance(file_data, dict), 'Error json-data type'
+        # Join new_data with file_data inside emp_details
+        file_data.update(new_data)
+        # Sets file's current position at offset.
+        file.seek(0)
+        # convert back to json.
+        json.dump(file_data, file, indent=4)
+
+
 def main():
     args = parse_args()
     num, length, dtype = args.num, args.name_length, args.dtype
-    all_res = dict()
+    all_res, formulas = dict(), list()
 
     for _ in tqdm.tqdm(list(range(num)), desc='create image'):
         # create different formula
         res, formula = create_formula(args.ops, args.max_num)
+        # remove duplicate formulas
+        if formula in formulas:
+            continue
+        formulas.append(formula)
+
         if np.rint(res) != res:
             continue
-        if res > 100 or res < -100:
+        if res >= 100 or res <= -100:
             continue
         # create image with formula
         img_name = generate_random_string(length)
@@ -77,14 +105,16 @@ def main():
         if img_name in all_res.keys():
             continue
         create_image(args.path, img_name, formula, dtype)
-        all_res[img_name] = res
+        all_res[f'{img_name}.jpg'] = int(res)
         logger.info(f'image name: {img_name}, formula: {formula}, res: {res}')
 
     logger.info(f'total number: {len(all_res.keys())}')
     # dump labels to json file
-    json_path = osp.join(args.path, dtype, f'{dtype}_label.json')
-    with open(json_path, 'w') as f:
-        json.dump(all_res, f)
+    dir_path = osp.join(args.path, 'labels')
+    if not osp.exists(dir_path):
+        os.makedirs(dir_path)
+    json_path = osp.join(dir_path, f'{dtype}_label.json')
+    write_json(all_res, json_path)
 
 
 if __name__ == '__main__':
